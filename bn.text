@@ -1,2 +1,137 @@
 #!/bin/bash
-echo "Hello World"
+
+#shows help message, exits with code 0
+help() {
+    echo "Title: Baby Name (bn) Utility		Version: 1.0.0"
+    echo "The bn utility allows users to search for the rankings of baby names from the late 1800’s to today."
+    echo "Usage: bn <year> <assigned gender: f|F|m|M|b|B>"
+    echo "Notes:"
+    echo "    <year> needs to be a four-digit number representing the year"
+    echo "    assigned gender can be  f or F for female; m or M for male; b or B for both."
+    echo "    The utility also requires precisely two arguments"
+    exit 0
+}
+
+#shows usage message to stderr (>&2)
+usage() {
+    echo "Usage: bn <year> <assigned gender: f|F|m|M|b|B>" >&2
+}
+
+# checks the 4-digit year input, exits with code 2 if invalid and sends invalid year to stderr
+check_year() {
+    if [[ ! "$1" =~ ^[0-9]{4}$ ]]; then
+        echo "Badly formatted year: $1
+	bn <year> <assigned gender f|F|m|M|b|B>" >&2
+        usage
+        exit 2
+    fi
+}
+
+# Checks the gender, exits with code 2 if invalid and sends invalid gender to stderr
+check_gender() {
+    if [[ ! "$1" =~ ^[fFmMbB]$ ]]; then
+        echo "Badly formatted assigned gender: $1
+	bn <year> <assigned gender f|F|m|M|b|B>" >&2
+        usage
+        exit 2
+    fi
+}
+
+# loads rank data for a given year
+load_rank() {
+    local year="$1"
+    local gender="$2"
+    local file="us_baby_names/yob${year}.txt" #format of directory files
+
+    # see if file exists, if not exit code 4 and error message to stderr
+    if [[ ! -f "$file" ]]; then
+        echo "No data for $year" >&2
+        exit 4
+    fi
+
+    # Convert gender to uppercase(M/F)
+    local gender_flag=$(echo "$gender" | tr '[:lower:]' '[:upper:]')
+    local rank=1
+
+    # Initialize associative array and total count
+    declare -gA rank_data
+    rank_data=()
+    total_count=0
+
+    # loads rank data in while loop
+    while IFS=',' read -r name gender_type count; do
+        if [[ "$gender_type" == "$gender_flag" ]]; then
+            rank_data["${name,,}"]="$rank"  # put in lowercase, so no case-sensitivity during matching
+            rank=$((rank + 1))
+            total_count=$((total_count + 1))
+        fi
+    done < "$file"
+}
+# processes the names and shows rank
+rank() {
+    local year="$1"
+    local gender="$2"
+    local debug="$3"
+    shift 3 #discard previous values
+    if [[ "$gender" == "b" || "$gender" == "B" ]]; then
+        rank "$year" "M" "$@"
+        rank "$year" "F" "$@"
+        return
+    fi
+
+    #loads rank once
+    load_rank "$year" "$gender"
+
+    # checks each name
+    for name in "$@"; do
+        if [[ ! "$name" =~ ^[a-zA-Z]+$ ]]; then #ensure only alphabetical characters in name
+            echo "Badly formatted name: $name" >&2 #exit code 3 and bad name sent to stderr
+            usage
+            exit 3
+        fi
+
+        #cuts whitespace and converts name to lowercase
+        name=$(echo "$name" | sed -E 's/^[ \t]+|[ \t]+$//g' | tr '[:upper:]' '[:lower:]')
+
+        #checks for name in the rank_data dictionary
+        if [[ -n "${rank_data[$name]}" ]]; then #if there, show rank
+            echo "$year: ${name^} ranked ${rank_data[$name]} out of $total_count ${gender,,} names."
+        else #if not there, show not found
+            echo "$year: ${name^} not found among ${gender,,} names."
+        fi
+    done
+}
+
+#"main procedure" starts here
+
+# checker for --help flag
+if [[ "$1" == "--help" ]]; then
+    help
+fi
+
+# checker for argument total
+if [[ $# -lt 2 ]]; then #if wrong number, call usage and exit code 1
+    usage
+    exit 1
+fi
+
+# assignment of variables for year and gender
+year="$1"
+gender="$2"
+shift 2 #discards previous values
+
+# checker for year and gender
+check_year "$year"
+check_gender "$gender"
+
+#  allows option to process names from either the command line arguments or stdin (testing)
+if [[ $# -ge 1 ]]; then
+    # Split names from a single argument into separate entries
+    names=($@)
+    rank "$year" "$gender" "${names[@]}"
+else
+    while read -r line; do
+        names=($line)  # Split line input into individual names
+        rank "$year" "$gender" "${names[@]}"
+    done
+fi
