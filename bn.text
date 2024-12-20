@@ -1,6 +1,10 @@
 #!/bin/bash
 
-#shows help message, exits with code 0
+#Author: Pavan Patel
+#Program Info: Program allows users to search for the rankings of baby names from the late 1800’s to today.
+
+
+#shows help message, exits with code 0 (return)
 help() {
     echo "Title: Baby Name (bn) Utility		Version: 1.0.0"
     echo "The bn utility allows users to search for the rankings of baby names from the late 1800’s to today."
@@ -12,32 +16,30 @@ help() {
     exit 0
 }
 
-#shows usage message to stderr (>&2)
+#shows usage message to stderr (>&2) (no return)
 usage() {
-    echo "Usage: bn <year> <assigned gender: f|F|m|M|b|B>" >&2
+    echo "bn <year> <assigned gender: f|F|m|M|b|B>" >&2
 }
 
-# checks the 4-digit year input, exits with code 2 if invalid and sends invalid year to stderr
+# checks the 4-digit year input, exits with code 2 if invalid and sends invalid year to stderr (return)
 check_year() {
     if [[ ! "$1" =~ ^[0-9]{4}$ ]]; then
-        echo "Badly formatted year: $1
-	bn <year> <assigned gender f|F|m|M|b|B>" >&2
+        echo "Badly formatted year: $1" >&2
         usage
         exit 2
     fi
 }
 
-# Checks the gender, exits with code 2 if invalid and sends invalid gender to stderr
+# Checks the gender, exits with code 2 if invalid and sends invalid gender to stderr (return)
 check_gender() {
     if [[ ! "$1" =~ ^[fFmMbB]$ ]]; then
-        echo "Badly formatted assigned gender: $1
-	bn <year> <assigned gender f|F|m|M|b|B>" >&2
+        echo "Badly formatted assigned gender: $1" >&2
         usage
         exit 2
     fi
 }
 
-# loads rank data for a given year
+# loads rank data for a given year, returns exit code 4 if invalid year entered otherwise void 
 load_rank() {
     local year="$1"
     local gender="$2"
@@ -49,31 +51,30 @@ load_rank() {
         exit 4
     fi
 
-    # Convert gender to uppercase(M/F)
+    # Convert gender to uppercase, making check later easier
     local gender_flag=$(echo "$gender" | tr '[:lower:]' '[:upper:]')
-    local rank=1
+    local ranking=1
 
-    # Initialize associative array and total count
+    # initialize associative array and total count
     declare -gA rank_data
-    rank_data=()
+    rank_data=() #reset to make sure empty before new data included
     total_count=0
 
     # loads rank data in while loop
     while IFS=',' read -r name gender_type count; do
         if [[ "$gender_type" == "$gender_flag" ]]; then
-            rank_data["${name,,}"]="$rank"  # put in lowercase, so no case-sensitivity during matching
-            rank=$((rank + 1))
+            rank_data["${name,,}"]="$ranking"  # put in lowercase, so no case-sensitivity during matching
+            ranking=$((ranking + 1))
             total_count=$((total_count + 1))
         fi
     done < "$file"
 }
-# processes the names and shows rank
+# processes the names and shows rank, returns code 3 if bad name error otherwise void
 rank() {
     local year="$1"
     local gender="$2"
-    local debug="$3"
-    shift 3 #discard previous values
-    if [[ "$gender" == "b" || "$gender" == "B" ]]; then
+    shift 2 #discard previous values
+    if [[ "$gender" == "b" || "$gender" == "B" ]]; then #if gender is both, then run rank for each
         rank "$year" "M" "$@"
         rank "$year" "F" "$@"
         return
@@ -81,12 +82,16 @@ rank() {
 
     #loads rank once
     load_rank "$year" "$gender"
-
+     
+    if [[ "$gender" == "M" || "$gender" == "m" ]]; then
+	local true_gender="male"
+    else
+	local true_gender="female"
+    fi
     # checks each name
     for name in "$@"; do
         if [[ ! "$name" =~ ^[a-zA-Z]+$ ]]; then #ensure only alphabetical characters in name
             echo "Badly formatted name: $name" >&2 #exit code 3 and bad name sent to stderr
-            usage
             exit 3
         fi
 
@@ -95,9 +100,9 @@ rank() {
 
         #checks for name in the rank_data dictionary
         if [[ -n "${rank_data[$name]}" ]]; then #if there, show rank
-            echo "$year: ${name^} ranked ${rank_data[$name]} out of $total_count ${gender,,} names."
+            echo "$year: ${name^} ranked ${rank_data[$name]} out of $total_count ${true_gender,,} names."
         else #if not there, show not found
-            echo "$year: ${name^} not found among ${gender,,} names."
+            echo "$year: ${name^} not found among ${true_gender,,} names."
         fi
     done
 }
@@ -123,6 +128,11 @@ shift 2 #discards previous values
 # checker for year and gender
 check_year "$year"
 check_gender "$gender"
+
+#if invalid year, then go directly into load_rank to avoid having to press enter after input, for error message
+if [[ "$year" > 2022 || "$year" < 1880 ]]; then
+    load_rank "$year" "$gender"
+fi
 
 #  allows option to process names from either the command line arguments or stdin (testing)
 if [[ $# -ge 1 ]]; then
